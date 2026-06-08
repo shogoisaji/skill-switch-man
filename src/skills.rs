@@ -227,10 +227,6 @@ fn sync_agent_skills(
 }
 
 fn is_tracked_skill_link(config: &Config, agent: Agent, target: &Path, name: &str) -> bool {
-    if !config.is_skill_enabled(agent, name) {
-        return false;
-    }
-
     let Ok(metadata) = fs::symlink_metadata(target) else {
         return false;
     };
@@ -246,11 +242,19 @@ fn is_tracked_skill_link(config: &Config, agent: Agent, target: &Path, name: &st
         return false;
     }
 
-    source
+    if !source
         .file_name()
         .and_then(|file_name| file_name.to_str())
         .map(|file_name| file_name == name)
         .unwrap_or(false)
+    {
+        return false;
+    }
+
+    let Ok(relative_path) = source.strip_prefix(&source_root) else {
+        return false;
+    };
+    config.is_skill_enabled(agent, &relative_path.to_string_lossy())
 }
 
 pub fn list_untracked_skills(
@@ -645,6 +649,51 @@ mod tests {
         assert_eq!(enabled.len(), 1);
         assert_eq!(enabled[0].name, "nested");
         assert_eq!(enabled[0].relative_path, "group/nested");
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn sync_recreates_missing_enabled_link_when_saved_matches_current() {
+        let _guard = env_lock().lock().unwrap();
+        let root = temp_root("sync-recreate-missing");
+        let store = root.join("store");
+        let home = root.join("home");
+        write_skill(&store, "writer", None);
+
+        std::env::set_var("SKILL_SWITCH_MAN_HOME", &home);
+        let mut config = config_for(&store);
+        config.toggle_skill(Agent::Codex, "writer");
+        let nodes = list_skills(&store).unwrap();
+        sync_skills(&config, &config, &nodes).unwrap();
+        std::env::remove_var("SKILL_SWITCH_MAN_HOME");
+
+        let target = home.join(".codex/skills/writer");
+        assert!(target.exists());
+        assert_eq!(fs::read_link(target).unwrap(), store.join("writer"));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn nested_enabled_link_is_tracked_by_relative_path() {
+        let _guard = env_lock().lock().unwrap();
+        let root = temp_root("nested-tracked-link");
+        let store = root.join("store");
+        let home = root.join("home");
+        write_skill(&store, "group/writer", None);
+        fs::create_dir_all(home.join(".codex/skills")).unwrap();
+        symlink_dir(
+            &store.join("group/writer"),
+            &home.join(".codex/skills/writer"),
+        );
+
+        std::env::set_var("SKILL_SWITCH_MAN_HOME", &home);
+        let mut config = config_for(&store);
+        config.toggle_skill(Agent::Codex, "group/writer");
+        let nodes = list_skills(&store).unwrap();
+        let untracked = list_untracked_skills(&config, &nodes, Agent::Codex).unwrap();
+        std::env::remove_var("SKILL_SWITCH_MAN_HOME");
+
+        assert!(untracked.is_empty());
     }
 
     #[test]

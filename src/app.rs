@@ -32,6 +32,9 @@ impl App {
     pub fn new() -> Result<Self> {
         let config = Config::load()?;
         let skills = list_skills(&config.get_skills_source_dir())?;
+        let message = sync_skills(&config, &config, &skills)
+            .err()
+            .map(|error| format!("Startup sync failed: {}", error));
         let untracked_skills = load_untracked_skills(&config, &skills)?;
 
         Ok(Self {
@@ -42,7 +45,7 @@ impl App {
             selected_index: 0,
             list_scroll_offset: 0,
             active_agent: Agent::Claude,
-            message: None,
+            message,
             current_screen: CurrentScreen::Home,
             input_buffer: String::new(),
             confirm_apply_yes: true,

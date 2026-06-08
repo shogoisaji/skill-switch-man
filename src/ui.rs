@@ -78,7 +78,7 @@ fn render_home_screen(f: &mut Frame, app: &mut App, area: Rect) {
         );
     f.render_widget(list, chunks[1]);
 
-    let guide = Paragraph::new(home_guide_line())
+    let guide = Paragraph::new(home_footer_line(app))
         .alignment(Alignment::Center)
         .block(
             Block::default()
@@ -278,7 +278,14 @@ fn settings_lines(value: String) -> Vec<Line<'static>> {
     lines
 }
 
-fn home_guide_line() -> Line<'static> {
+fn home_footer_line(app: &App) -> Line<'static> {
+    if let Some(message) = &app.message {
+        return Line::from(Span::styled(
+            message.clone(),
+            Style::default().fg(C_YELLOW).add_modifier(Modifier::BOLD),
+        ));
+    }
+
     Line::from(vec![
         Span::styled("←/→", Style::default().fg(Color::Cyan)),
         Span::raw(" Tool  "),
