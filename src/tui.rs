@@ -53,11 +53,10 @@ fn run_event_loop(
                     break;
                 }
             }
-            Event::Paste(text) => {
-                if handle_paste_event(app, &text) {
-                    break;
-                }
+            Event::Paste(text) if handle_paste_event(app, &text) => {
+                break;
             }
+            Event::Paste(_) => {}
             _ => {}
         }
     }
