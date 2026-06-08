@@ -1,0 +1,10 @@
+/target/
+
+# Local editor and OS files
+.DS_Store
+*.swp
+*.swo
+
+# Local environment files
+.env
+.env.*

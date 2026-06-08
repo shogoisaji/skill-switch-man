@@ -1,0 +1,25 @@
+[package]
+name = "skill-switch-man"
+version = "0.1.0"
+edition = "2021"
+description = "TUI for managing agent skills for Claude Code and Codex"
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/shogoisaji/skill-switch-man"
+keywords = ["cli", "tui", "skills", "agents"]
+categories = ["command-line-utilities", "development-tools"]
+
+[[bin]]
+name = "skillswitchman"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1.0"
+crossterm = "0.28"
+directories = "5.0"
+ratatui = "0.28"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[target.'cfg(windows)'.dependencies]
+junction = "1.0"

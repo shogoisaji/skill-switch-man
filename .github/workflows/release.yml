@@ -1,0 +1,88 @@
+name: Release Build
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+  BIN_NAME: skillswitchman
+
+jobs:
+  build:
+    name: Build ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            os: ubuntu-latest
+            artifact: skillswitchman-linux-x86_64
+            archive: skillswitchman-linux-x86_64.tar.gz
+            binary: target/release/skillswitchman
+          - name: macos
+            os: macos-latest
+            artifact: skillswitchman-macos
+            archive: skillswitchman-macos.tar.gz
+            binary: target/release/skillswitchman
+          - name: windows-x86_64
+            os: windows-latest
+            artifact: skillswitchman-windows-x86_64
+            archive: skillswitchman-windows-x86_64.zip
+            binary: target/release/skillswitchman.exe
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - name: Build release binary
+        run: cargo build --release --locked
+
+      - name: Package release binary
+        if: runner.os != 'Windows'
+        run: |
+          mkdir -p dist
+          cp "${{ matrix.binary }}" "dist/${{ env.BIN_NAME }}"
+          tar -czf "${{ matrix.archive }}" -C dist "${{ env.BIN_NAME }}"
+
+      - name: Package release binary
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist
+          Copy-Item "${{ matrix.binary }}" "dist/${{ env.BIN_NAME }}.exe"
+          Compress-Archive -Path "dist/${{ env.BIN_NAME }}.exe" -DestinationPath "${{ matrix.archive }}"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.archive }}
+          if-no-files-found: error
+
+  release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
