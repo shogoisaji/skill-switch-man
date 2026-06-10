@@ -1,7 +1,8 @@
 use crate::config::{collapse_tilde, expand_tilde, Agent, Config};
 use crate::skills::{
-    capture_skill_links_for_configs, find_folder_by_path_mut, flatten_visible_nodes, list_skills,
-    list_untracked_skills, restore_skill_links, sync_skills, Skill, SkillNode, UntrackedSkill,
+    capture_skill_links_for_configs, collect_existing_relative_paths, find_folder_by_path_mut,
+    flatten_visible_nodes, list_skills, list_untracked_skills, restore_skill_links, sync_skills,
+    Skill, SkillNode, UntrackedSkill,
 };
 use anyhow::Result;
 use std::collections::HashSet;
@@ -30,11 +31,23 @@ pub struct App {
 
 impl App {
     pub fn new() -> Result<Self> {
-        let config = Config::load()?;
+        let mut config = Config::load()?;
         let skills = list_skills(&config.get_skills_source_dir())?;
-        let message = sync_skills(&config, &config, &skills)
-            .err()
-            .map(|error| format!("Startup sync failed: {}", error));
+        let existing = collect_existing_relative_paths(&skills);
+        let message = match sync_skills(&config, &config, &skills) {
+            Ok(pruned) => {
+                let pruned_config = config.prune_missing_enabled_skills(&existing);
+                if !pruned.is_empty() || !pruned_config.is_empty() {
+                    let _ = config.save();
+                }
+                if !pruned.is_empty() {
+                    Some(format!("Cleaned up dangling links: {}", pruned.join(", ")))
+                } else {
+                    None
+                }
+            }
+            Err(error) => Some(format!("Startup sync failed: {}", error)),
+        };
         let untracked_skills = load_untracked_skills(&config, &skills)?;
 
         Ok(Self {
@@ -211,13 +224,24 @@ impl App {
         let snapshots =
             capture_skill_links_for_configs(&self.saved_config, &self.config, &self.skills)?;
 
-        match sync_skills(&self.saved_config, &self.config, &self.skills)
-            .and_then(|_| self.config.save())
-        {
-            Ok(_) => {
+        match sync_skills(&self.saved_config, &self.config, &self.skills) {
+            Ok(pruned) => {
+                let existing = collect_existing_relative_paths(&self.skills);
+                let pruned_config = self.config.prune_missing_enabled_skills(&existing);
+                if !pruned.is_empty() || !pruned_config.is_empty() {
+                    let _ = self.config.save();
+                }
+
                 self.saved_config = self.config.clone();
                 self.current_screen = CurrentScreen::Home;
-                self.message = Some("Changes applied successfully".to_string());
+                if pruned.is_empty() {
+                    self.message = Some("Changes applied successfully".to_string());
+                } else {
+                    self.message = Some(format!(
+                        "Changes applied; cleaned up dangling links: {}",
+                        pruned.join(", ")
+                    ));
+                }
                 Ok(())
             }
             Err(error) => {
