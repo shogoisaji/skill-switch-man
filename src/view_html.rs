@@ -424,7 +424,7 @@ fn format_timestamp() -> String {
 
     // Howard Hinnant's civil_from_days algorithm
     let days = (total_secs / 86400) as i64;
-    let time_of_day = (total_secs % 86400) as u64;
+    let time_of_day = total_secs % 86400;
 
     let z = days + 719468;
     let era = z.div_euclid(146097);
