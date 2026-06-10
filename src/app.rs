@@ -41,10 +41,7 @@ impl App {
                     let _ = config.save();
                 }
                 if !pruned.is_empty() {
-                    Some(format!(
-                        "Cleaned up dangling links: {}",
-                        pruned.join(", ")
-                    ))
+                    Some(format!("Cleaned up dangling links: {}", pruned.join(", ")))
                 } else {
                     None
                 }

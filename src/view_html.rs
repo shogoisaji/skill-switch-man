@@ -441,7 +441,10 @@ fn format_timestamp() -> String {
     let min = (time_of_day % 3600) / 60;
     let s = time_of_day % 60;
 
-    format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02} UTC", y, m, d, h, min, s)
+    format!(
+        "{:04}-{:02}-{:02} {:02}:{:02}:{:02} UTC",
+        y, m, d, h, min, s
+    )
 }
 
 fn open_in_browser(path: &Path) -> Result<()> {
