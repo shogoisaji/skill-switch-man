@@ -17,6 +17,8 @@ It keeps your skill source directory separate from each tool's active skills dir
 - Detect manually installed or externally linked skills as untracked entries.
 - Avoid overwriting untracked skills when a name conflict is detected.
 - Preserve nested skill folders and discover skills by `SKILL.md`.
+- Import skills from any GitHub repository via `add-store`.
+- Generate an HTML status page via `view-html`.
 
 ## Supported Tools
 
@@ -127,6 +129,30 @@ If an untracked skill has the same name as a skill in the source store, it is sh
 skillswitchman --help
 skillswitchman --version
 ```
+
+### `add-store` — Import skills from a GitHub repository
+
+```sh
+skillswitchman add-store <URL>
+```
+
+Clones a GitHub repository, scans it for skills (directories containing `SKILL.md`), and copies them into the skill store.
+
+Supports:
+
+- Standard HTTPS URLs: `https://github.com/owner/repo`
+- `.git` suffix: `https://github.com/owner/repo.git`
+- Subdirectory via tree path: `https://github.com/owner/repo/tree/main/skills/grill-me`
+
+If multiple skills are found, an interactive selector lets you choose which ones to import. If a skill already exists in the store, you are prompted to confirm the overwrite.
+
+### `view-html` — Open a status page in the browser
+
+```sh
+skillswitchman view-html
+```
+
+Generates an HTML status page showing all skills, their enabled state per tool, and any untracked skills, then opens it in the default browser.
 
 ## Development
 

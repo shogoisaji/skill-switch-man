@@ -135,6 +135,26 @@ impl Config {
         }
     }
 
+    /// ストアに存在しない enabled_skills エントリを削除し、除去されたパスのリストを返す。
+    pub fn prune_missing_enabled_skills(
+        &mut self,
+        existing_paths: &std::collections::HashSet<String>,
+    ) -> Vec<String> {
+        let mut pruned = Vec::new();
+        for agent in Agent::ALL {
+            let skills = self.enabled_skills.get_mut(agent);
+            skills.retain(|s| {
+                if existing_paths.contains(s) {
+                    true
+                } else {
+                    pruned.push(s.clone());
+                    false
+                }
+            });
+        }
+        pruned
+    }
+
     fn ensure_managed_storage_exists(&self) -> Result<()> {
         let config_dir = Self::get_config_dir()?;
         if !config_dir.exists() {

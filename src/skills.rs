@@ -87,6 +87,37 @@ enum SkillLinkState {
     Other,
 }
 
+/// SkillNode ツリーを巡回し、各 Skill に visitor を適用する汎用ウォーカー。
+pub fn walk_skills(nodes: &[SkillNode], mut visitor: impl FnMut(&Skill)) {
+    let mut stack: Vec<&[SkillNode]> = vec![nodes];
+    while let Some(current) = stack.pop() {
+        for node in current {
+            match node {
+                SkillNode::Skill(skill) => visitor(skill),
+                SkillNode::Folder { children, .. } => stack.push(children),
+            }
+        }
+    }
+}
+
+/// 指定ディレクトリ以下の SKILL.md を含む全ディレクトリのパスを返す。
+/// 隠しディレクトリ（`.` 始まり）はスキップされる。list_skills() と同一の発見ロジック。
+pub fn scan_skill_dirs(source_dir: &Path) -> Result<Vec<PathBuf>> {
+    let nodes = list_skills(source_dir)?;
+    let mut dirs = Vec::new();
+    walk_skills(&nodes, |skill| dirs.push(skill.path.clone()));
+    Ok(dirs)
+}
+
+/// SkillNode ツリー内に存在する全スキルの relative_path を収集する。
+pub fn collect_existing_relative_paths(nodes: &[SkillNode]) -> HashSet<String> {
+    let mut paths = HashSet::new();
+    walk_skills(nodes, |skill| {
+        paths.insert(skill.relative_path.clone());
+    });
+    paths
+}
+
 pub fn list_skills(source_dir: &Path) -> Result<Vec<SkillNode>> {
     let mut nodes = Vec::new();
     if !source_dir.exists() {
@@ -147,11 +178,16 @@ fn build_skill_tree(root_dir: &Path, current_dir: &Path, nodes: &mut Vec<SkillNo
     Ok(())
 }
 
-pub fn sync_skills(saved_config: &Config, config: &Config, skills: &[SkillNode]) -> Result<()> {
+pub fn sync_skills(
+    saved_config: &Config,
+    config: &Config,
+    skills: &[SkillNode],
+) -> Result<Vec<String>> {
+    let mut pruned = Vec::new();
     for agent in Agent::ALL {
-        sync_agent_skills(saved_config, config, skills, agent)?;
+        pruned.extend(sync_agent_skills(saved_config, config, skills, agent)?);
     }
-    Ok(())
+    Ok(pruned)
 }
 
 fn sync_agent_skills(
@@ -159,7 +195,7 @@ fn sync_agent_skills(
     config: &Config,
     skills: &[SkillNode],
     agent: Agent,
-) -> Result<()> {
+) -> Result<Vec<String>> {
     let enabled_skills = collect_enabled_skills(config, skills, agent);
     let previously_enabled_skills = collect_enabled_skills(saved_config, skills, agent);
     let mut name_map: HashMap<String, &Skill> = HashMap::new();
@@ -223,7 +259,24 @@ fn sync_agent_skills(
         }
     }
 
-    Ok(())
+    // クリーンアップ: 管理下のリンク切れシンボリックリンクを検出・削除
+    let mut pruned = Vec::new();
+    if let Ok(entries) = fs::read_dir(&target_root) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if is_managed_skill_link(&path, &source_root) && is_dangling_symlink(&path) {
+                let name = path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("")
+                    .to_string();
+                remove_symlink(&path).ok();
+                pruned.push(name);
+            }
+        }
+    }
+
+    Ok(pruned)
 }
 
 fn is_tracked_skill_link(config: &Config, agent: Agent, target: &Path, name: &str) -> bool {
@@ -477,6 +530,20 @@ fn untracked_link_target(target: &Path) -> Option<PathBuf> {
         return None;
     }
     resolve_link_source(target).ok()
+}
+
+/// シンボリックリンクのターゲットが存在しない（リンク切れ）かどうかを返す。
+fn is_dangling_symlink(target: &Path) -> bool {
+    let Ok(metadata) = fs::symlink_metadata(target) else {
+        return false;
+    };
+    if !is_link_metadata(target, &metadata) {
+        return false;
+    }
+    let Ok(source) = resolve_link_source(target) else {
+        return false;
+    };
+    !source.exists()
 }
 
 fn create_symlink(source: &Path, target: &Path) -> Result<()> {
@@ -764,5 +831,38 @@ mod tests {
         std::env::remove_var("SKILL_SWITCH_MAN_HOME");
 
         assert!(!home.join(".codex/skills/writer").exists());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn sync_cleans_up_dangling_symlink_when_source_deleted() {
+        let _guard = env_lock().lock().unwrap();
+        let root = temp_root("sync-dangling");
+        let store = root.join("store");
+        let home = root.join("home");
+
+        // 1. スキルを作成して有効化
+        let skill_path = write_skill(&store, "writer", None);
+        std::env::set_var("SKILL_SWITCH_MAN_HOME", &home);
+        let mut config = config_for(&store);
+        config.toggle_skill(Agent::Codex, "writer");
+        let nodes = list_skills(&store).unwrap();
+        sync_skills(&config, &config, &nodes).unwrap();
+
+        let target = home.join(".codex/skills/writer");
+        assert!(target.exists());
+
+        // 2. ストアからスキルを削除（シンボリックリンクがリンク切れになる）
+        fs::remove_dir_all(&skill_path).unwrap();
+        assert!(!target.exists()); // ターゲットが存在しない = リンク切れ
+        assert!(fs::symlink_metadata(&target).is_ok()); // しかしシンボリックリンク自体は残っている
+
+        // 3. 再度syncするとリンク切れがクリーンアップされる
+        let nodes_after = list_skills(&store).unwrap();
+        let pruned = sync_skills(&config, &config, &nodes_after).unwrap();
+        std::env::remove_var("SKILL_SWITCH_MAN_HOME");
+
+        assert!(fs::symlink_metadata(&target).is_err()); // シンボリックリンク自体が削除される
+        assert_eq!(pruned, vec!["writer"]);
     }
 }
