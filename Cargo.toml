@@ -1,6 +1,6 @@
 [package]
 name = "skill-switch-man"
-version = "0.1.0"
+version = "0.3.0"
 edition = "2021"
 description = "TUI for managing agent skills for Claude Code and Codex"
 license = "MIT"
