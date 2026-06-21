@@ -33,7 +33,8 @@ It keeps your skill source directory separate from each tool's active skills dir
 Install with Homebrew:
 
 ```sh
-brew install shogoisaji/skill-switch-man/skill-switch-man
+brew tap shogoisaji/skill-switch-man
+brew install skill-switch-man
 ```
 
 Install from a local checkout:
