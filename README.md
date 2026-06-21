@@ -30,6 +30,12 @@ It keeps your skill source directory separate from each tool's active skills dir
 
 ## Installation
 
+Install with Homebrew:
+
+```sh
+brew install shogoisaji/skill-switch-man/skill-switch-man
+```
+
 Install from a local checkout:
 
 ```sh
