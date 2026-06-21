@@ -227,9 +227,20 @@ impl App {
         match sync_skills(&self.saved_config, &self.config, &self.skills) {
             Ok(pruned) => {
                 let existing = collect_existing_relative_paths(&self.skills);
-                let pruned_config = self.config.prune_missing_enabled_skills(&existing);
-                if !pruned.is_empty() || !pruned_config.is_empty() {
-                    let _ = self.config.save();
+                let _pruned_config = self.config.prune_missing_enabled_skills(&existing);
+                if let Err(error) = self.config.save() {
+                    let rollback_result = restore_skill_links(&snapshots);
+                    self.current_screen = CurrentScreen::Home;
+                    self.message = Some(match rollback_result {
+                        Ok(_) => format!("Error saving config: {}", error),
+                        Err(rollback_error) => {
+                            format!(
+                                "Error saving config: {}; rollback failed: {}",
+                                error, rollback_error
+                            )
+                        }
+                    });
+                    return Err(error);
                 }
 
                 self.saved_config = self.config.clone();
