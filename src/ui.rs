@@ -165,18 +165,25 @@ fn build_skill_node_line<'a>(
             "📁",
         )
     } else {
-        (" ", Style::default(), "📄")
+        ("", Style::default(), "📄")
     };
 
     let indent = "  ".repeat(depth);
     let mut spans = vec![
         Span::styled(format!("{} ", cursor), base_style),
         Span::styled(format!("{} ", state_marker), state_style),
-        Span::styled(format!("{} ", fold_marker), fold_style),
         Span::styled(indent, base_style),
-        Span::styled(format!("{} ", icon), base_style),
-        Span::styled(node.name(), base_style.add_modifier(Modifier::BOLD)),
     ];
+
+    if node.is_folder() {
+        spans.push(Span::styled(format!("{} ", fold_marker), fold_style));
+    }
+
+    spans.push(Span::styled(format!("{} ", icon), base_style));
+    spans.push(Span::styled(
+        node.name(),
+        base_style.add_modifier(Modifier::BOLD),
+    ));
 
     if let Some(skill) = node.skill() {
         if let Some(description) = &skill.description {

@@ -705,6 +705,46 @@ mod tests {
     }
 
     #[test]
+    fn list_skills_discovers_deeply_nested_skills() {
+        let root = temp_root("deep-nested");
+        write_skill(&root, "top", None);
+        write_skill(&root, "group/nested", None);
+        write_skill(&root, "a/b/c/leaf", None);
+        write_skill(&root, "x/y/z/w/deep", None);
+
+        let nodes = list_skills(&root).unwrap();
+        let mut names = Vec::new();
+        walk_skills_for_names(&nodes, &mut names);
+        names.sort();
+        assert_eq!(
+            names,
+            vec!["a/b/c/leaf", "group/nested", "top", "x/y/z/w/deep",]
+        );
+    }
+
+    fn walk_skills_for_names(nodes: &[SkillNode], out: &mut Vec<String>) {
+        for node in nodes {
+            match node {
+                SkillNode::Skill(skill) => out.push(skill.relative_path.clone()),
+                SkillNode::Folder { children, .. } => walk_skills_for_names(children, out),
+            }
+        }
+    }
+
+    #[test]
+    fn list_skills_skips_subdirs_when_dir_has_skill_md() {
+        let root = temp_root("skill-with-nested");
+        write_skill(&root, "parent", None);
+        write_skill(&root, "parent/child", None);
+
+        let nodes = list_skills(&root).unwrap();
+        let mut names = Vec::new();
+        walk_skills_for_names(&nodes, &mut names);
+        names.sort();
+        assert_eq!(names, vec!["parent"]);
+    }
+
+    #[test]
     fn collect_enabled_skills_uses_relative_paths() {
         let root = temp_root("collect-enabled");
         write_skill(&root, "group/nested", None);
