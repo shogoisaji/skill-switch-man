@@ -65,11 +65,21 @@ Key bindings:
 | --- | --- |
 | `Left` / `Right`, `h` / `l` | Switch tool tab |
 | `Up` / `Down`, `j` / `k` | Move selection |
-| `Space` | Toggle the selected skill for the active tool |
-| `Enter` | Review and save pending changes |
+| `Space` | Toggle the selected skill, or expand/collapse a folder |
+| `Enter` | Review pending changes, then apply or cancel |
+| `s` | Open settings |
+| `?`, `F1` | Open the in-app help |
 | `Esc`, `q` | Quit |
 
-Changes are not written to `settings.json` until you confirm them with `Enter`. The confirmation dialog shows the skills that will be added or removed for each tool.
+When the terminal has enough space, the TUI shows a detail pane for the selected item. It separates the skill name from its description and shows the current state and target directory. Nested folders are drawn with `│`, `├─`, and `└─` guides so parent/child and sibling relationships are visible at a glance. The list uses explicit status labels:
+
+- `[ON]` — enabled for the selected tool.
+- `[OFF]` — available in the shared store but not enabled.
+- `[BLOCKED]` — an untracked entry with the same name prevents enabling it.
+- `[UNTRACKED]` — present in a tool directory but outside the shared store.
+- `[FOLDER]` — a group that can be expanded or collapsed; folders are not enabled themselves.
+
+Changes are not written to `settings.json` until you review and apply them with `Enter`. Use `?` or `F1` at any time to see the full explanation and key bindings.
 
 ## Configuration
 
