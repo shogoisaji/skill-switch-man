@@ -46,8 +46,10 @@ EXAMPLE settings.json:
 KEYS:
   Left/Right, h/l   Switch tool tab
   Up/Down, j/k      Move selection
-  Space             Toggle selected skill for current tool
-  Enter             Show changes and save
+  Space             Toggle selected skill, or expand/collapse a folder
+  Enter             Review pending changes, then apply or cancel
+  s                 Open settings
+  ?, F1             Show TUI help
   Esc, q            Quit
 ";
 
