@@ -13,6 +13,7 @@ pub enum CurrentScreen {
     Settings,
     EditingSkillsSourcePath,
     Confirmation,
+    Help,
 }
 
 pub struct App {
@@ -27,6 +28,7 @@ pub struct App {
     pub current_screen: CurrentScreen,
     pub input_buffer: String,
     pub confirm_apply_yes: bool,
+    pub(crate) help_return_screen: CurrentScreen,
 }
 
 impl App {
@@ -62,6 +64,7 @@ impl App {
             current_screen: CurrentScreen::Home,
             input_buffer: String::new(),
             confirm_apply_yes: true,
+            help_return_screen: CurrentScreen::Home,
         })
     }
 
@@ -141,7 +144,7 @@ impl App {
             CurrentScreen::Confirmation => {
                 self.confirm_apply_yes = !self.confirm_apply_yes;
             }
-            CurrentScreen::EditingSkillsSourcePath => {}
+            CurrentScreen::EditingSkillsSourcePath | CurrentScreen::Help => {}
         }
     }
 
@@ -316,6 +319,16 @@ impl App {
 
     pub fn exit_settings(&mut self) {
         self.current_screen = CurrentScreen::Home;
+    }
+
+    pub fn enter_help(&mut self) {
+        self.help_return_screen = self.current_screen;
+        self.current_screen = CurrentScreen::Help;
+        self.message = None;
+    }
+
+    pub fn exit_help(&mut self) {
+        self.current_screen = self.help_return_screen;
     }
 
     pub fn start_editing_skills_source(&mut self) {

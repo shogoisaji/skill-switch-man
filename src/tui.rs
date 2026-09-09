@@ -79,12 +79,16 @@ fn handle_key_event(app: &mut App, key: KeyEvent) -> bool {
             KeyCode::Up | KeyCode::Char('k') => app.prev_item(),
             KeyCode::Left | KeyCode::Char('h') => app.prev_agent(),
             KeyCode::Right | KeyCode::Char('l') => app.next_agent(),
+            KeyCode::Char('s') | KeyCode::Char('S') => app.enter_settings(),
+            KeyCode::Char('?') | KeyCode::F(1) => app.enter_help(),
             _ if is_space_key(key) => app.toggle_current(),
             _ if is_enter_key(key) => app.request_apply(),
             _ => {}
         },
         CurrentScreen::Settings => match key.code {
             KeyCode::Esc => app.exit_settings(),
+            KeyCode::Char('q') | KeyCode::Char('Q') => return true,
+            KeyCode::Char('?') | KeyCode::F(1) => app.enter_help(),
             _ if is_enter_key(key) || is_space_key(key) => app.toggle_current(),
             _ => {}
         },
@@ -96,6 +100,11 @@ fn handle_key_event(app: &mut App, key: KeyEvent) -> bool {
             KeyCode::Char('n') | KeyCode::Char('N') => app.confirm_apply_yes = false,
             _ if is_space_key(key) => app.toggle_current(),
             _ if is_enter_key(key) => return app.confirm_apply(),
+            _ => {}
+        },
+        CurrentScreen::Help => match key.code {
+            KeyCode::Esc | KeyCode::Char('?') | KeyCode::F(1) => app.exit_help(),
+            KeyCode::Char('q') | KeyCode::Char('Q') => return true,
             _ => {}
         },
     }
@@ -130,6 +139,7 @@ fn handle_paste_event(app: &mut App, text: &str) -> bool {
             CurrentScreen::Settings => app.toggle_current(),
             CurrentScreen::Confirmation => return app.confirm_apply(),
             CurrentScreen::EditingSkillsSourcePath => {}
+            CurrentScreen::Help => {}
         },
         _ => {}
     }
@@ -155,6 +165,8 @@ fn is_space_key(key: KeyEvent) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{is_enter_key, is_space_key};
+    use crate::app::{App, CurrentScreen};
+    use crate::config::{Agent, Config};
     use crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
 
     #[test]
@@ -199,5 +211,68 @@ mod tests {
             KeyCode::Char('s'),
             KeyModifiers::NONE
         )));
+    }
+
+    fn empty_app() -> App {
+        App {
+            config: Config::default(),
+            saved_config: Config::default(),
+            skills: Vec::new(),
+            untracked_skills: Vec::new(),
+            selected_index: 0,
+            list_scroll_offset: 0,
+            active_agent: Agent::Claude,
+            message: None,
+            current_screen: CurrentScreen::Home,
+            input_buffer: String::new(),
+            confirm_apply_yes: true,
+            help_return_screen: CurrentScreen::Home,
+        }
+    }
+
+    #[test]
+    fn settings_shortcut_opens_settings() {
+        let mut app = empty_app();
+
+        assert!(!super::handle_key_event(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('s'), KeyModifiers::NONE)
+        ));
+        assert_eq!(app.current_screen, CurrentScreen::Settings);
+    }
+
+    #[test]
+    fn help_shortcut_opens_and_escape_closes_help() {
+        let mut app = empty_app();
+
+        assert!(!super::handle_key_event(
+            &mut app,
+            KeyEvent::new(KeyCode::Char('?'), KeyModifiers::NONE)
+        ));
+        assert_eq!(app.current_screen, CurrentScreen::Help);
+
+        assert!(!super::handle_key_event(
+            &mut app,
+            KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)
+        ));
+        assert_eq!(app.current_screen, CurrentScreen::Home);
+    }
+
+    #[test]
+    fn help_returns_to_the_screen_that_opened_it() {
+        let mut app = empty_app();
+        app.enter_settings();
+
+        assert!(!super::handle_key_event(
+            &mut app,
+            KeyEvent::new(KeyCode::F(1), KeyModifiers::NONE)
+        ));
+        assert_eq!(app.current_screen, CurrentScreen::Help);
+
+        assert!(!super::handle_key_event(
+            &mut app,
+            KeyEvent::new(KeyCode::Esc, KeyModifiers::NONE)
+        ));
+        assert_eq!(app.current_screen, CurrentScreen::Settings);
     }
 }
