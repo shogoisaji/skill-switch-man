@@ -1,11 +1,14 @@
-use crate::app::{App, CurrentScreen, VisibleItem};
+use crate::app::{App, CurrentScreen, HitRect, PendingChangeLine, VisibleItem};
 use crate::config::Agent;
 use crate::skills::{SkillNode, UntrackedSkill};
 use ratatui::{
-    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    layout::{Alignment, Constraint, Direction, Layout, Margin, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::{Block, BorderType, Borders, Clear, Paragraph, Tabs, Wrap},
+    widgets::{
+        Block, BorderType, Borders, Padding, Paragraph, Scrollbar, ScrollbarOrientation,
+        ScrollbarState, Tabs, Wrap,
+    },
     Frame,
 };
 
@@ -56,7 +59,10 @@ fn render_home_screen(f: &mut Frame, app: &mut App, area: Rect) {
     );
     f.render_widget(tabs, chunks[0]);
 
-    if chunks[1].width >= 90 {
+    let hide_details = app.current_screen == CurrentScreen::Confirmation;
+    if hide_details {
+        render_skill_list(f, app, chunks[1]);
+    } else if chunks[1].width >= 90 {
         let body = Layout::default()
             .direction(Direction::Horizontal)
             .constraints([Constraint::Percentage(64), Constraint::Min(30)])
@@ -89,10 +95,20 @@ fn render_home_screen(f: &mut Frame, app: &mut App, area: Rect) {
 }
 
 fn render_skill_list(f: &mut Frame, app: &mut App, area: Rect) {
-    let list_view_height = area.height.saturating_sub(2) as usize;
+    let block = Block::default()
+        .borders(Borders::ALL)
+        .title(format!(
+            "{} - managed skill tree",
+            app.active_agent.display_name()
+        ))
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(agent_color(app.active_agent)));
+    let inner = block.inner(area);
+    let list_view_height = inner.height as usize;
     app.ensure_selection_visible(list_view_height);
 
     let lines = build_skill_lines(app);
+    let line_count = lines.len();
     let content = if lines.is_empty() {
         vec![Line::from(Span::styled(
             "No skills found in the shared store.",
@@ -102,25 +118,37 @@ fn render_skill_list(f: &mut Frame, app: &mut App, area: Rect) {
         lines
     };
 
+    let show_scrollbar = line_count > list_view_height && inner.width > 1;
+    let mut hit_area = inner;
+    if show_scrollbar {
+        hit_area.width = hit_area.width.saturating_sub(1);
+    }
+    app.hit_targets.skill_list = Some(hit_rect(hit_area));
+
     let list = Paragraph::new(content)
         .scroll((app.list_scroll_offset as u16, 0))
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(format!(
-                    "{} - managed skill tree",
-                    app.active_agent.display_name()
-                ))
-                .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(agent_color(app.active_agent))),
-        );
+        .block(block);
     f.render_widget(list, area);
+
+    if show_scrollbar {
+        let mut state = ScrollbarState::new(line_count).position(app.list_scroll_offset);
+        f.render_stateful_widget(
+            Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                .begin_symbol(Some("▲"))
+                .end_symbol(Some("▼")),
+            area.inner(Margin {
+                vertical: 1,
+                horizontal: 0,
+            }),
+            &mut state,
+        );
+    }
 }
 
 fn build_skill_lines(app: &App) -> Vec<Line<'static>> {
     let mut lines = Vec::new();
     let mut visible_index = 0;
-    append_skill_lines(app, &app.skills, &[], &mut visible_index, &mut lines);
+    append_skill_lines(app, &app.skills, 0, &mut visible_index, &mut lines);
 
     for (index, skill) in app.active_untracked_skills().iter().enumerate() {
         lines.push(build_untracked_line(
@@ -135,13 +163,13 @@ fn build_skill_lines(app: &App) -> Vec<Line<'static>> {
 fn append_skill_lines(
     app: &App,
     nodes: &[SkillNode],
-    ancestor_has_next_sibling: &[bool],
+    depth: usize,
     visible_index: &mut usize,
     lines: &mut Vec<Line<'static>>,
 ) {
     for (node_index, node) in nodes.iter().enumerate() {
         let is_last = node_index + 1 == nodes.len();
-        let prefix = tree_prefix(ancestor_has_next_sibling, is_last);
+        let prefix = tree_prefix(depth, is_last);
         lines.push(build_skill_node_line(app, node, *visible_index, prefix));
         *visible_index += 1;
 
@@ -151,22 +179,17 @@ fn append_skill_lines(
             ..
         } = node
         {
-            let mut child_ancestors = ancestor_has_next_sibling.to_vec();
-            child_ancestors.push(!is_last);
-            append_skill_lines(app, children, &child_ancestors, visible_index, lines);
+            append_skill_lines(app, children, depth + 1, visible_index, lines);
         }
     }
 }
 
-fn tree_prefix(ancestor_has_next_sibling: &[bool], is_last: bool) -> String {
-    if ancestor_has_next_sibling.is_empty() {
+fn tree_prefix(depth: usize, is_last: bool) -> String {
+    if depth == 0 {
         return String::new();
     }
 
-    let mut prefix = String::new();
-    for has_next_sibling in ancestor_has_next_sibling {
-        prefix.push_str(if *has_next_sibling { "│  " } else { "   " });
-    }
+    let mut prefix = "   ".repeat(depth);
     prefix.push_str(if is_last { "└─ " } else { "├─ " });
     prefix
 }
@@ -542,9 +565,13 @@ fn home_footer_lines(app: &App) -> Vec<Line<'static>> {
             Span::styled("Space", key_style),
             Span::raw(" Toggle/expand   "),
             Span::styled("Enter", key_style),
-            Span::raw(" Review/apply"),
+            Span::raw(" Apply   "),
+            Span::styled("Wheel", key_style),
+            Span::raw(" Scroll"),
         ]),
         Line::from(vec![
+            Span::styled("Click", key_style),
+            Span::raw(" Select, click again to toggle   "),
             Span::styled("s", key_style),
             Span::raw(" Settings   "),
             Span::styled("?", key_style),
@@ -592,15 +619,20 @@ fn render_help_screen(f: &mut Frame, area: Rect) {
             "A group; folders are expanded/collapsed, not enabled.",
         ),
         help_row(
-            "│ ├─ └─",
+            "├─ └─",
             "Tree guides show parent, child, and sibling relationships.",
         ),
         Line::from(""),
         section_line("Key bindings"),
         help_row("←/→, h/l", "Switch the selected target tool."),
         help_row("↑/↓, j/k", "Move through skills and folders."),
+        help_row("PgUp/PgDn", "Move the selection by one screen."),
         help_row("Space", "Toggle a skill, or expand/collapse a folder."),
-        help_row("Enter", "Review the pending changes, then apply or cancel."),
+        help_row("Enter", "Open the change list, then apply or cancel."),
+        help_row(
+            "Mouse",
+            "Click a skill to select it; click again to toggle. Wheel scrolls.",
+        ),
         help_row("s", "Open settings and change the shared store path."),
         help_row("Esc", "Quit from the list; go back from settings/help."),
         help_row("q", "Quit the application."),
@@ -630,10 +662,100 @@ fn help_row(key: &str, description: &str) -> Line<'static> {
     ])
 }
 
-fn render_confirmation_dialog(f: &mut Frame, app: &App, area: Rect) {
+fn render_confirmation_dialog(f: &mut Frame, app: &mut App, area: Rect) {
     let accent = agent_color(app.active_agent);
-    let popup = centered_rect(area, 78, 20);
     let popup_style = Style::default().bg(Color::Rgb(18, 18, 18)).fg(Color::White);
+    let items = app.pending_change_items();
+    const FOOTER_HEIGHT: u16 = 3;
+    let chrome = 2;
+    let max_height = area.height.saturating_sub(2).max(8);
+    let desired = (items.len() as u16)
+        .saturating_add(FOOTER_HEIGHT)
+        .saturating_add(chrome)
+        .max(10);
+    let popup = centered_rect(area, 80, desired.min(max_height));
+
+    clear_overlay(f, popup);
+
+    let block = Block::default()
+        .style(popup_style)
+        .borders(Borders::ALL)
+        .padding(Padding::horizontal(1))
+        .title("Apply changes?")
+        .border_type(BorderType::Rounded)
+        .border_style(Style::default().fg(accent));
+    let inner = block.inner(popup);
+    f.render_widget(block, popup);
+    f.render_widget(Block::default().style(popup_style), inner);
+
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(1), Constraint::Length(FOOTER_HEIGHT)])
+        .split(inner);
+
+    let list_area = chunks[0];
+    app.confirm_viewport_height = list_area.height as usize;
+    let max_offset = items
+        .len()
+        .saturating_sub(app.confirm_viewport_height.max(1));
+    if app.confirm_viewport_height == 0 {
+        app.confirm_scroll_offset = 0;
+    } else {
+        app.confirm_scroll_offset = app.confirm_scroll_offset.min(max_offset);
+    }
+
+    let show_scrollbar = items.len() > app.confirm_viewport_height && list_area.width > 1;
+    let mut hit_area = list_area;
+    if show_scrollbar {
+        hit_area.width = hit_area.width.saturating_sub(1);
+    }
+    app.hit_targets.confirm_list = Some(hit_rect(hit_area));
+
+    let list = Paragraph::new(pending_change_lines(&items))
+        .style(popup_style)
+        .scroll((app.confirm_scroll_offset as u16, 0));
+    f.render_widget(list, list_area);
+
+    if show_scrollbar {
+        let mut state = ScrollbarState::new(items.len()).position(app.confirm_scroll_offset);
+        f.render_stateful_widget(
+            Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                .begin_symbol(Some("▲"))
+                .end_symbol(Some("▼")),
+            list_area,
+            &mut state,
+        );
+    }
+
+    render_confirmation_footer(f, app, chunks[1], popup_style);
+}
+
+fn pending_change_lines(items: &[PendingChangeLine]) -> Vec<Line<'static>> {
+    items
+        .iter()
+        .map(|item| match item {
+            PendingChangeLine::Empty => Line::from(Span::styled(
+                "No pending changes.",
+                Style::default().fg(Color::Gray),
+            )),
+            PendingChangeLine::Spacer => Line::from(""),
+            PendingChangeLine::AgentHeader(agent) => Line::from(Span::styled(
+                agent.display_name().to_string(),
+                Style::default().fg(C_YELLOW).add_modifier(Modifier::BOLD),
+            )),
+            PendingChangeLine::Enable(path) => Line::from(vec![
+                Span::styled("+ Enable  ", Style::default().fg(C_GREEN)),
+                Span::raw(path.clone()),
+            ]),
+            PendingChangeLine::Disable(path) => Line::from(vec![
+                Span::styled("- Disable ", Style::default().fg(Color::Red)),
+                Span::raw(path.clone()),
+            ]),
+        })
+        .collect()
+}
+
+fn render_confirmation_footer(f: &mut Frame, app: &mut App, area: Rect, popup_style: Style) {
     let apply_style = if app.confirm_apply_yes {
         Style::default().fg(C_YELLOW).add_modifier(Modifier::BOLD)
     } else {
@@ -645,76 +767,86 @@ fn render_confirmation_dialog(f: &mut Frame, app: &App, area: Rect) {
         Style::default().fg(C_YELLOW).add_modifier(Modifier::BOLD)
     };
 
-    let mut lines = vec![
-        Line::from(Span::styled(
-            "Review pending changes",
-            Style::default().fg(C_YELLOW).add_modifier(Modifier::BOLD),
-        )),
-        Line::from("These links and settings will change only if you apply them."),
-        Line::from(""),
-    ];
+    let rows = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Length(1),
+            Constraint::Length(1),
+            Constraint::Min(0),
+        ])
+        .split(area);
+    let buttons = Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Length(8),
+            Constraint::Length(3),
+            Constraint::Length(10),
+            Constraint::Min(0),
+        ])
+        .split(rows[0]);
 
-    let changes = app.pending_changes();
-    if changes.iter().all(|change| change.is_empty()) {
-        lines.push(Line::from(Span::styled(
-            "No pending changes.",
-            Style::default().fg(Color::Gray),
-        )));
-    } else {
-        for change in changes {
-            if change.is_empty() {
-                continue;
-            }
-
-            lines.push(Line::from(Span::styled(
-                change.agent.display_name(),
-                Style::default().fg(C_YELLOW).add_modifier(Modifier::BOLD),
-            )));
-
-            for skill in change.added {
-                lines.push(Line::from(vec![
-                    Span::styled("+ Enable  ", Style::default().fg(C_GREEN)),
-                    Span::raw(skill.relative_path),
-                ]));
-            }
-
-            for skill in change.removed {
-                lines.push(Line::from(vec![
-                    Span::styled("- Disable ", Style::default().fg(Color::Red)),
-                    Span::raw(skill.relative_path),
-                ]));
-            }
-
-            lines.push(Line::from(""));
-        }
-    }
-
-    lines.extend([
-        Line::from(""),
-        Line::from(vec![
+    f.render_widget(
+        Paragraph::new(Line::from(vec![
             Span::raw("["),
             Span::styled("Apply", apply_style),
-            Span::raw("]   ["),
+            Span::raw("]"),
+        ]))
+        .style(popup_style),
+        buttons[0],
+    );
+    f.render_widget(
+        Paragraph::new(Line::from(vec![
+            Span::raw("["),
             Span::styled("Cancel", cancel_style),
             Span::raw("]"),
-        ]),
-        Line::from("←/→ or h/l selects   y/n selects   Enter confirms   Esc backs out"),
-    ]);
+        ]))
+        .style(popup_style),
+        buttons[2],
+    );
+    app.hit_targets.apply_button = Some(hit_rect(buttons[0]));
+    app.hit_targets.cancel_button = Some(hit_rect(buttons[2]));
 
-    let content = Paragraph::new(lines)
-        .style(popup_style)
-        .alignment(Alignment::Left)
-        .wrap(Wrap { trim: true })
-        .block(
-            Block::default()
-                .style(popup_style)
-                .borders(Borders::ALL)
-                .title("Apply changes?")
-                .border_type(BorderType::Rounded)
-                .border_style(Style::default().fg(accent)),
-        );
-    f.render_widget(Clear, popup);
-    f.render_widget(content, popup);
+    f.render_widget(
+        Paragraph::new(Line::from(
+            "↑↓ scroll   ←/→ or y/n selects   Enter confirms   Esc backs out",
+        ))
+        .style(popup_style.fg(Color::DarkGray)),
+        rows[1],
+    );
+}
+
+fn clear_overlay(f: &mut Frame, area: Rect) {
+    let buf = f.buffer_mut();
+    let bounds = buf.area;
+    let x = area.x.saturating_sub(1);
+    let right = area.right().saturating_add(1).min(bounds.right());
+    let bottom = area.bottom().min(bounds.bottom());
+    let width = right.saturating_sub(x);
+    let height = bottom.saturating_sub(area.y.min(bottom));
+    if width == 0 || height == 0 {
+        return;
+    }
+
+    let expanded = Rect {
+        x,
+        y: area.y,
+        width,
+        height,
+    };
+    for y in expanded.top()..expanded.bottom() {
+        for col in expanded.left()..expanded.right() {
+            buf[(col, y)].reset();
+        }
+    }
+}
+
+fn hit_rect(area: Rect) -> HitRect {
+    HitRect {
+        x: area.x,
+        y: area.y,
+        width: area.width,
+        height: area.height,
+    }
 }
 
 fn agent_color(agent: Agent) -> Color {
@@ -746,30 +878,20 @@ fn centered_rect(area: Rect, width_percent: u16, height: u16) -> Rect {
 mod tests {
     use super::ui;
     use crate::app::{App, CurrentScreen};
-    use crate::config::{Agent, Config};
+    use crate::config::Agent;
     use crate::skills::{Skill, SkillNode};
     use ratatui::{backend::TestBackend, Terminal};
     use std::path::PathBuf;
 
     fn app_with_skill() -> App {
         App {
-            config: Config::default(),
-            saved_config: Config::default(),
             skills: vec![SkillNode::Skill(Skill {
                 name: "writer".to_string(),
                 path: PathBuf::from("/tmp/skill-store/writer"),
                 relative_path: "writer".to_string(),
                 description: Some("Writes clear technical documentation.".to_string()),
             })],
-            untracked_skills: Vec::new(),
-            selected_index: 0,
-            list_scroll_offset: 0,
-            active_agent: Agent::Claude,
-            message: None,
-            current_screen: CurrentScreen::Home,
-            input_buffer: String::new(),
-            confirm_apply_yes: true,
-            help_return_screen: CurrentScreen::Home,
+            ..App::default()
         }
     }
 
@@ -884,5 +1006,147 @@ mod tests {
         assert!(text.contains("├─ ▼ diagnostics/"));
         assert!(text.contains("└─ ▼ verification/"));
         assert!(text.contains("├─ log-analysis"));
+        assert!(!text.contains("│  ├─"));
+        assert!(!text.contains("│  └─"));
+    }
+
+    #[test]
+    fn tree_prefix_indents_without_vertical_bars() {
+        assert_eq!(super::tree_prefix(0, false), "");
+        assert_eq!(super::tree_prefix(1, false), "   ├─ ");
+        assert_eq!(super::tree_prefix(1, true), "   └─ ");
+        assert_eq!(super::tree_prefix(2, false), "      ├─ ");
+        assert_eq!(super::tree_prefix(2, true), "      └─ ");
+        assert!(!super::tree_prefix(3, false).contains('│'));
+    }
+
+    #[test]
+    fn confirmation_dialog_keeps_pending_skill_order_across_redraws() {
+        let mut app = app_with_nested_skills();
+        for path in [
+            "root-skill",
+            "debug-samples/diagnostics/log-analysis",
+            "debug-samples/diagnostics/reproduction",
+            "debug-samples/verification/regression-test",
+        ] {
+            app.config.toggle_skill(Agent::Claude, path);
+        }
+        app.current_screen = CurrentScreen::Confirmation;
+
+        let backend = TestBackend::new(120, 40);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|frame| ui(frame, &mut app)).unwrap();
+        let first = rendered_text(&terminal);
+
+        assert!(first.contains("Apply changes?"));
+        assert!(!first.contains("Review pending changes"));
+        assert!(!first.contains("These links and settings will change"));
+        assert!(first.contains("root-skill"));
+        assert!(first.contains("log-analysis"));
+        assert!(first.contains("reproduction"));
+        assert!(first.contains("regression-test"));
+
+        for _ in 0..10 {
+            terminal.draw(|frame| ui(frame, &mut app)).unwrap();
+            assert_eq!(rendered_text(&terminal), first);
+        }
+    }
+
+    #[test]
+    fn confirmation_dialog_scrolls_overflowing_changes() {
+        let mut app = app_with_skill();
+        app.skills = (0..40)
+            .map(|i| {
+                let name = format!("skill-{i:02}");
+                SkillNode::Skill(Skill {
+                    name: name.clone(),
+                    path: PathBuf::from(format!("/tmp/skill-store/{name}")),
+                    relative_path: name,
+                    description: None,
+                })
+            })
+            .collect();
+        for i in 0..40 {
+            app.config
+                .toggle_skill(Agent::Claude, &format!("skill-{i:02}"));
+        }
+        app.current_screen = CurrentScreen::Confirmation;
+
+        let backend = TestBackend::new(80, 16);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|frame| ui(frame, &mut app)).unwrap();
+        let first = rendered_text(&terminal);
+
+        assert!(first.contains("Apply changes?"));
+        assert!(!first.contains("Review pending changes"));
+        assert!(first.contains("+ Enable  skill-00"));
+        assert!(!first.contains("+ Enable  skill-39"));
+
+        app.scroll_confirm_by(100);
+        terminal.draw(|frame| ui(frame, &mut app)).unwrap();
+        let scrolled = rendered_text(&terminal);
+
+        assert!(!scrolled.contains("+ Enable  skill-00"));
+        assert!(scrolled.contains("+ Enable  skill-39"));
+        assert!(scrolled.contains("[Apply]"));
+        assert!(scrolled.contains("[Cancel]"));
+    }
+
+    #[test]
+    fn confirmation_dialog_does_not_mix_wide_character_details() {
+        let mut app = app_with_skill();
+        if let SkillNode::Skill(skill) = &mut app.skills[0] {
+            skill.description = Some(
+                "モバイルアプリの画面遷移図/画面フローを作って。maestroでスクショを撮って画面遷移図にする。"
+                    .to_string(),
+            );
+        }
+        app.config.toggle_skill(Agent::Claude, "writer");
+        app.current_screen = CurrentScreen::Confirmation;
+
+        let backend = TestBackend::new(80, 24);
+        let mut terminal = Terminal::new(backend).unwrap();
+        terminal.draw(|frame| ui(frame, &mut app)).unwrap();
+        let lines = rendered_lines(&terminal);
+
+        let enable_lines: Vec<_> = lines
+            .iter()
+            .filter(|line| line.contains("+ Enable"))
+            .cloned()
+            .collect();
+        assert!(
+            !enable_lines.is_empty(),
+            "expected enable rows in the dialog"
+        );
+        for line in &enable_lines {
+            assert!(
+                !line.contains("モバイル"),
+                "details text bled into dialog row: {line:?}"
+            );
+            assert!(
+                line.contains('│') || line.contains('╭') || line.contains('╰'),
+                "dialog row lost its left border: {line:?}"
+            );
+        }
+
+        let apply_line = lines
+            .iter()
+            .find(|line| line.contains("[Apply]"))
+            .expect("Apply button");
+        assert!(
+            !apply_line.contains("モバイル"),
+            "details text bled into footer: {apply_line:?}"
+        );
+        assert!(apply_line.contains("[Cancel]"));
+    }
+
+    fn rendered_lines(terminal: &Terminal<TestBackend>) -> Vec<String> {
+        let buffer = terminal.backend().buffer();
+        let width = buffer.area.width as usize;
+        buffer
+            .content()
+            .chunks(width)
+            .map(|row| row.iter().map(|cell| cell.symbol()).collect::<String>())
+            .collect()
     }
 }

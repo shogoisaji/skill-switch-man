@@ -248,7 +248,7 @@ impl Agent {
             Agent::Claude => "Claude",
             Agent::Codex => "Codex",
             Agent::OpenCode => "OpenCode",
-            Agent::Antigravity => "Antigravity CLI",
+            Agent::Antigravity => "Antigravity",
         }
     }
 
@@ -257,7 +257,7 @@ impl Agent {
             Agent::Claude => "Claude Code",
             Agent::Codex => "Codex",
             Agent::OpenCode => "OpenCode",
-            Agent::Antigravity => "Antigravity CLI",
+            Agent::Antigravity => "Antigravity",
         }
     }
 
@@ -367,7 +367,7 @@ mod tests {
             Agent::Antigravity.home_dir_name(),
             ".gemini/antigravity-cli"
         );
-        assert_eq!(Agent::Antigravity.name(), "Antigravity CLI");
-        assert_eq!(Agent::Antigravity.display_name(), "Antigravity CLI");
+        assert_eq!(Agent::Antigravity.name(), "Antigravity");
+        assert_eq!(Agent::Antigravity.display_name(), "Antigravity");
     }
 }

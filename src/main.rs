@@ -47,8 +47,10 @@ EXAMPLE settings.json:
 KEYS:
   Left/Right, h/l   Switch tool tab
   Up/Down, j/k      Move selection
+  PgUp/PgDn         Move selection by one screen
   Space             Toggle selected skill, or expand/collapse a folder
   Enter             Review pending changes, then apply or cancel
+  Mouse             Click to select, click again to toggle; wheel scrolls
   s                 Open settings
   ?, F1             Show TUI help
   Esc, q            Quit
