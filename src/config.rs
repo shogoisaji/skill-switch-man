@@ -25,6 +25,8 @@ pub struct EnabledSkills {
     pub codex: Vec<String>,
     #[serde(default)]
     pub opencode: Vec<String>,
+    #[serde(default)]
+    pub antigravity: Vec<String>,
 }
 
 impl Default for Config {
@@ -42,6 +44,7 @@ impl EnabledSkills {
             Agent::Claude => &self.claude,
             Agent::Codex => &self.codex,
             Agent::OpenCode => &self.opencode,
+            Agent::Antigravity => &self.antigravity,
         }
     }
 
@@ -50,6 +53,7 @@ impl EnabledSkills {
             Agent::Claude => &mut self.claude,
             Agent::Codex => &mut self.codex,
             Agent::OpenCode => &mut self.opencode,
+            Agent::Antigravity => &mut self.antigravity,
         }
     }
 }
@@ -182,10 +186,16 @@ pub enum Agent {
     Claude,
     Codex,
     OpenCode,
+    Antigravity,
 }
 
 impl Agent {
-    pub const ALL: [Agent; 3] = [Agent::Claude, Agent::Codex, Agent::OpenCode];
+    pub const ALL: [Agent; 4] = [
+        Agent::Claude,
+        Agent::Codex,
+        Agent::OpenCode,
+        Agent::Antigravity,
+    ];
 
     pub fn from_index(index: usize) -> Self {
         Self::ALL[index % Self::ALL.len()]
@@ -220,6 +230,7 @@ impl Agent {
             Agent::Claude => ".claude",
             Agent::Codex => ".codex",
             Agent::OpenCode => ".opencode",
+            Agent::Antigravity => ".gemini/antigravity-cli",
         }
     }
 
@@ -228,6 +239,7 @@ impl Agent {
             Agent::Claude => "C",
             Agent::Codex => "X",
             Agent::OpenCode => "O",
+            Agent::Antigravity => "A",
         }
     }
 
@@ -236,6 +248,7 @@ impl Agent {
             Agent::Claude => "Claude",
             Agent::Codex => "Codex",
             Agent::OpenCode => "OpenCode",
+            Agent::Antigravity => "Antigravity CLI",
         }
     }
 
@@ -244,6 +257,7 @@ impl Agent {
             Agent::Claude => "Claude Code",
             Agent::Codex => "Codex",
             Agent::OpenCode => "OpenCode",
+            Agent::Antigravity => "Antigravity CLI",
         }
     }
 
@@ -252,6 +266,7 @@ impl Agent {
             Agent::Claude => (255, 165, 0),
             Agent::Codex => (154, 205, 50),
             Agent::OpenCode => (180, 120, 255),
+            Agent::Antigravity => (0, 191, 255),
         }
     }
 }
@@ -312,6 +327,7 @@ mod tests {
         assert!(config.is_skill_enabled(Agent::Claude, "writer"));
         assert!(config.enabled_skills.get(Agent::Codex).is_empty());
         assert!(config.enabled_skills.get(Agent::OpenCode).is_empty());
+        assert!(config.enabled_skills.get(Agent::Antigravity).is_empty());
     }
 
     #[test]
@@ -338,9 +354,20 @@ mod tests {
 
     #[test]
     fn agent_navigation_wraps_over_all_tools() {
-        assert_eq!(Agent::Claude.prev(), Agent::OpenCode);
+        assert_eq!(Agent::Claude.prev(), Agent::Antigravity);
         assert_eq!(Agent::Claude.next(), Agent::Codex);
         assert_eq!(Agent::Codex.next(), Agent::OpenCode);
-        assert_eq!(Agent::OpenCode.next(), Agent::Claude);
+        assert_eq!(Agent::OpenCode.next(), Agent::Antigravity);
+        assert_eq!(Agent::Antigravity.next(), Agent::Claude);
+    }
+
+    #[test]
+    fn antigravity_uses_antigravity_cli_skills_dir() {
+        assert_eq!(
+            Agent::Antigravity.home_dir_name(),
+            ".gemini/antigravity-cli"
+        );
+        assert_eq!(Agent::Antigravity.name(), "Antigravity CLI");
+        assert_eq!(Agent::Antigravity.display_name(), "Antigravity CLI");
     }
 }

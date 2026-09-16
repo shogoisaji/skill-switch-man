@@ -4,13 +4,13 @@
   <img src="assets/skill-switch-man.webp" alt="skill-switch-man logo" width="420">
 </p>
 
-`skill-switch-man` is a terminal UI for enabling the same reusable agent skills across Claude Code, Codex, and OpenCode. The installed command is `skillswitchman`.
+`skill-switch-man` is a terminal UI for enabling the same reusable agent skills across Claude Code, Codex, OpenCode, and Antigravity CLI. The installed command is `skillswitchman`.
 
 It keeps your skill source directory separate from each tool's active skills directory, then links the skills you enable into the right target location.
 
 ## Features
 
-- Manage Claude Code, Codex, and OpenCode skills from one TUI.
+- Manage Claude Code, Codex, OpenCode, and Antigravity CLI skills from one TUI.
 - Use one shared skill store as the source of truth.
 - Enable or disable skills independently for each tool.
 - Preview pending changes before they are applied.
@@ -27,6 +27,7 @@ It keeps your skill source directory separate from each tool's active skills dir
 | Claude Code | `~/.claude/skills` |
 | Codex | `~/.codex/skills` |
 | OpenCode | `~/.opencode/skills` |
+| Antigravity CLI | `~/.gemini/antigravity-cli/skills` |
 
 ## Installation
 
@@ -97,7 +98,8 @@ Use `skills_source_dir` to choose where reusable skills are stored:
   "enabled_skills": {
     "claude": ["browser-use"],
     "codex": ["browser-use", "imagegen"],
-    "opencode": []
+    "opencode": [],
+    "antigravity": []
   }
 }
 ```
@@ -110,7 +112,8 @@ Default configuration:
   "enabled_skills": {
     "claude": [],
     "codex": [],
-    "opencode": []
+    "opencode": [],
+    "antigravity": []
   }
 }
 ```
@@ -136,7 +139,7 @@ Subdirectories are shown as folders in the TUI. Only directories containing `SKI
 
 ## Untracked Skills
 
-Skills that already exist in `~/.claude/skills`, `~/.codex/skills`, or `~/.opencode/skills` but do not point into the configured `skills_source_dir` are shown as untracked skills with a `!` marker.
+Skills that already exist in `~/.claude/skills`, `~/.codex/skills`, `~/.opencode/skills`, or `~/.gemini/antigravity-cli/skills` but do not point into the configured `skills_source_dir` are shown as untracked skills with a `!` marker.
 
 If an untracked skill has the same name as a skill in the source store, it is shown with `name conflict`. In that state, `skill-switch-man` will not overwrite the manual skill or external symlink. Rename or remove the manual entry, or move it into `skills_source_dir` if you want this tool to manage it.
 
