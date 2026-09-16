@@ -905,4 +905,25 @@ mod tests {
         assert!(fs::symlink_metadata(&target).is_err()); // シンボリックリンク自体が削除される
         assert_eq!(pruned, vec!["writer"]);
     }
+
+    #[test]
+    #[cfg(unix)]
+    fn sync_creates_antigravity_link_under_antigravity_cli() {
+        let _guard = env_lock().lock().unwrap();
+        let root = temp_root("sync-antigravity");
+        let store = root.join("store");
+        let home = root.join("home");
+        write_skill(&store, "writer", None);
+
+        std::env::set_var("SKILL_SWITCH_MAN_HOME", &home);
+        let mut config = config_for(&store);
+        config.toggle_skill(Agent::Antigravity, "writer");
+        let nodes = list_skills(&store).unwrap();
+        sync_skills(&config, &config, &nodes).unwrap();
+        std::env::remove_var("SKILL_SWITCH_MAN_HOME");
+
+        let target = home.join(".gemini/antigravity-cli/skills/writer");
+        assert!(target.exists());
+        assert_eq!(fs::read_link(target).unwrap(), store.join("writer"));
+    }
 }

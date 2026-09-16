@@ -199,10 +199,11 @@ fn generate_html(
     }
 
     if skills.is_empty() {
-        skill_rows.push_str(
-            r#"                    <tr><td colspan="6" class="muted">No skills found</td></tr>
+        skill_rows.push_str(&format!(
+            r#"                    <tr><td colspan="{}" class="muted">No skills found</td></tr>
 "#,
-        );
+            3 + Agent::ALL.len(),
+        ));
     }
 
     let untracked_section = if untracked_sections.is_empty() {
@@ -221,6 +222,16 @@ fn generate_html(
         )
     };
 
+    let mut skill_headers = String::new();
+    for agent in Agent::ALL {
+        let (r, g, b) = agent.accent_rgb();
+        skill_headers.push_str(&format!(
+            r#"                        <th style="color:rgb({r},{g},{b})">{name}</th>
+"#,
+            name = html_escape(agent.name()),
+        ));
+    }
+
     format!(
         r##"<!DOCTYPE html>
 <html lang="en">
@@ -236,9 +247,6 @@ fn generate_html(
             --border: #2a3a5c;
             --text: #e0e0e0;
             --muted: #6b7b9e;
-            --claude: rgb(255,165,0);
-            --codex: rgb(154,205,50);
-            --opencode: rgb(180,120,255);
         }}
         * {{ margin: 0; padding: 0; box-sizing: border-box; }}
         body {{
@@ -393,10 +401,7 @@ fn generate_html(
                         <th>Name</th>
                         <th>Path</th>
                         <th>Description</th>
-                        <th style="color:var(--claude)">Claude</th>
-                        <th style="color:var(--codex)">Codex</th>
-                        <th style="color:var(--opencode)">OpenCode</th>
-                    </tr>
+{skill_headers}                    </tr>
                 </thead>
                 <tbody>
 {skill_rows}                </tbody>
@@ -411,6 +416,7 @@ fn generate_html(
         count = skills.len(),
         plural = if skills.len() == 1 { "" } else { "s" },
         agent_sections = agent_sections,
+        skill_headers = skill_headers,
         skill_rows = skill_rows,
         untracked_section = untracked_section,
     )

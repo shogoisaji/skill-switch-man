@@ -12,7 +12,7 @@ use app::App;
 const HELP: &str = "\
 skillswitchman
 
-TUI for enabling shared agent skills for Claude Code, Codex, and OpenCode.
+TUI for enabling shared agent skills for Claude Code, Codex, OpenCode, and Antigravity CLI.
 
 USAGE:
   skillswitchman [OPTIONS]
@@ -39,7 +39,8 @@ EXAMPLE settings.json:
     \"enabled_skills\": {
       \"claude\": [\"browser-use\"],
       \"codex\": [\"browser-use\", \"imagegen\"],
-      \"opencode\": []
+      \"opencode\": [],
+      \"antigravity\": []
     }
   }
 
