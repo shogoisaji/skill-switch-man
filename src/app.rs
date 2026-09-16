@@ -5,10 +5,11 @@ use crate::skills::{
     Skill, SkillNode, UntrackedSkill,
 };
 use anyhow::Result;
-use std::collections::HashSet;
+use std::collections::BTreeSet;
 
-#[derive(PartialEq, Clone, Copy, Debug)]
+#[derive(PartialEq, Clone, Copy, Debug, Default)]
 pub enum CurrentScreen {
+    #[default]
     Home,
     Settings,
     EditingSkillsSourcePath,
@@ -23,12 +24,39 @@ pub struct App {
     pub untracked_skills: Vec<AgentUntrackedSkills>,
     pub selected_index: usize,
     pub list_scroll_offset: usize,
+    pub list_viewport_height: usize,
     pub active_agent: Agent,
     pub message: Option<String>,
     pub current_screen: CurrentScreen,
     pub input_buffer: String,
     pub confirm_apply_yes: bool,
+    pub confirm_scroll_offset: usize,
+    pub confirm_viewport_height: usize,
+    pub hit_targets: HitTargets,
     pub(crate) help_return_screen: CurrentScreen,
+}
+
+impl Default for App {
+    fn default() -> Self {
+        Self {
+            config: Config::default(),
+            saved_config: Config::default(),
+            skills: Vec::new(),
+            untracked_skills: Vec::new(),
+            selected_index: 0,
+            list_scroll_offset: 0,
+            list_viewport_height: 0,
+            active_agent: Agent::Claude,
+            message: None,
+            current_screen: CurrentScreen::Home,
+            input_buffer: String::new(),
+            confirm_apply_yes: true,
+            confirm_scroll_offset: 0,
+            confirm_viewport_height: 0,
+            hit_targets: HitTargets::default(),
+            help_return_screen: CurrentScreen::Home,
+        }
+    }
 }
 
 impl App {
@@ -59,11 +87,15 @@ impl App {
             untracked_skills,
             selected_index: 0,
             list_scroll_offset: 0,
+            list_viewport_height: 0,
             active_agent: Agent::Claude,
             message,
             current_screen: CurrentScreen::Home,
             input_buffer: String::new(),
             confirm_apply_yes: true,
+            confirm_scroll_offset: 0,
+            confirm_viewport_height: 0,
+            hit_targets: HitTargets::default(),
             help_return_screen: CurrentScreen::Home,
         })
     }
@@ -220,7 +252,133 @@ impl App {
     pub fn request_apply(&mut self) {
         self.current_screen = CurrentScreen::Confirmation;
         self.confirm_apply_yes = true;
+        self.confirm_scroll_offset = 0;
         self.message = None;
+    }
+
+    pub fn pending_change_items(&self) -> Vec<PendingChangeLine> {
+        let changes = self.pending_changes();
+        if changes.iter().all(|change| change.is_empty()) {
+            return vec![PendingChangeLine::Empty];
+        }
+
+        let mut items = Vec::new();
+        let mut first_group = true;
+        for change in changes {
+            if change.is_empty() {
+                continue;
+            }
+            if !first_group {
+                items.push(PendingChangeLine::Spacer);
+            }
+            first_group = false;
+            items.push(PendingChangeLine::AgentHeader(change.agent));
+            for skill in change.added {
+                items.push(PendingChangeLine::Enable(skill.relative_path));
+            }
+            for skill in change.removed {
+                items.push(PendingChangeLine::Disable(skill.relative_path));
+            }
+        }
+        items
+    }
+
+    pub fn scroll_list_by(&mut self, delta: i32) {
+        if self.current_screen != CurrentScreen::Home {
+            return;
+        }
+
+        let len = self.visible_items().len();
+        if len == 0 {
+            self.list_scroll_offset = 0;
+            self.selected_index = 0;
+            return;
+        }
+
+        let viewport = self.list_viewport_height.max(1);
+        let max_offset = len.saturating_sub(viewport);
+        let next = (self.list_scroll_offset as i32 + delta).clamp(0, max_offset as i32) as usize;
+        self.list_scroll_offset = next;
+
+        if self.selected_index < next {
+            self.selected_index = next;
+        } else {
+            let last_visible = next + viewport.saturating_sub(1);
+            if self.selected_index > last_visible {
+                self.selected_index = last_visible.min(len - 1);
+            }
+        }
+    }
+
+    pub fn page_list(&mut self, forward: bool) {
+        let jump = self.list_viewport_height.max(1);
+        for _ in 0..jump {
+            if forward {
+                self.next_item();
+            } else {
+                self.prev_item();
+            }
+        }
+    }
+
+    pub fn scroll_confirm_by(&mut self, delta: i32) {
+        if self.current_screen != CurrentScreen::Confirmation {
+            return;
+        }
+
+        let line_count = self.pending_change_items().len();
+        let viewport = self.confirm_viewport_height.max(1);
+        let max_offset = line_count.saturating_sub(viewport);
+        self.confirm_scroll_offset =
+            (self.confirm_scroll_offset as i32 + delta).clamp(0, max_offset as i32) as usize;
+    }
+
+    pub fn click_skill_list(&mut self, column: u16, row: u16) {
+        if self.current_screen != CurrentScreen::Home {
+            return;
+        }
+        let Some(area) = self.hit_targets.skill_list else {
+            return;
+        };
+        let Some(relative_row) = area.relative_row(column, row) else {
+            return;
+        };
+
+        let index = self
+            .list_scroll_offset
+            .saturating_add(relative_row as usize);
+        let len = self.visible_items().len();
+        if index >= len {
+            return;
+        }
+
+        if self.selected_index == index {
+            self.toggle_selected_skill();
+        } else {
+            self.selected_index = index;
+            self.message = None;
+        }
+    }
+
+    pub fn click_confirmation(&mut self, column: u16, row: u16) {
+        if self.current_screen != CurrentScreen::Confirmation {
+            return;
+        }
+
+        if self
+            .hit_targets
+            .apply_button
+            .is_some_and(|area| area.contains(column, row))
+        {
+            self.confirm_apply_yes = true;
+            let _ = self.confirm_apply();
+        } else if self
+            .hit_targets
+            .cancel_button
+            .is_some_and(|area| area.contains(column, row))
+        {
+            self.cancel_confirmation();
+        }
     }
 
     pub fn execute_apply(&mut self) -> Result<()> {
@@ -394,6 +552,7 @@ impl App {
     }
 
     pub fn ensure_selection_visible(&mut self, viewport_height: usize) {
+        self.list_viewport_height = viewport_height;
         if viewport_height == 0 {
             self.list_scroll_offset = 0;
             return;
@@ -416,6 +575,48 @@ pub enum VisibleItem<'a> {
     UntrackedSkill(&'a UntrackedSkill),
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PendingChangeLine {
+    Empty,
+    Spacer,
+    AgentHeader(Agent),
+    Enable(String),
+    Disable(String),
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct HitRect {
+    pub x: u16,
+    pub y: u16,
+    pub width: u16,
+    pub height: u16,
+}
+
+impl HitRect {
+    pub fn contains(self, column: u16, row: u16) -> bool {
+        column >= self.x
+            && row >= self.y
+            && column < self.x.saturating_add(self.width)
+            && row < self.y.saturating_add(self.height)
+    }
+
+    pub fn relative_row(self, column: u16, row: u16) -> Option<u16> {
+        if self.contains(column, row) {
+            Some(row - self.y)
+        } else {
+            None
+        }
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct HitTargets {
+    pub skill_list: Option<HitRect>,
+    pub confirm_list: Option<HitRect>,
+    pub apply_button: Option<HitRect>,
+    pub cancel_button: Option<HitRect>,
+}
+
 #[derive(Debug, Clone)]
 pub struct AgentSkillChanges {
     pub agent: Agent,
@@ -435,7 +636,7 @@ impl AgentSkillChanges {
     }
 }
 
-fn enabled_set(config: &Config, agent: Agent) -> HashSet<String> {
+fn enabled_set(config: &Config, agent: Agent) -> BTreeSet<String> {
     config.enabled_skills.get(agent).iter().cloned().collect()
 }
 
@@ -467,4 +668,167 @@ fn load_untracked_skills(
             })
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::skills::Skill;
+    use std::path::PathBuf;
+
+    fn skill(name: &str) -> SkillNode {
+        SkillNode::Skill(Skill {
+            name: name.to_string(),
+            path: PathBuf::from(format!("/tmp/skill-store/{name}")),
+            relative_path: name.to_string(),
+            description: None,
+        })
+    }
+
+    fn app_with_skills(names: &[&str]) -> App {
+        App {
+            skills: names.iter().copied().map(skill).collect(),
+            ..App::default()
+        }
+    }
+
+    fn change_paths(changes: &[AgentSkillChanges], agent: Agent) -> (Vec<String>, Vec<String>) {
+        let change = changes
+            .iter()
+            .find(|change| change.agent == agent)
+            .expect("agent changes");
+        (
+            change
+                .added
+                .iter()
+                .map(|skill| skill.relative_path.clone())
+                .collect(),
+            change
+                .removed
+                .iter()
+                .map(|skill| skill.relative_path.clone())
+                .collect(),
+        )
+    }
+
+    #[test]
+    fn pending_changes_lists_skills_in_stable_sorted_order() {
+        let mut app = app_with_skills(&["zebra", "alpha", "middle", "writer", "planner"]);
+        for name in ["zebra", "alpha", "middle"] {
+            app.config.toggle_skill(Agent::Claude, name);
+        }
+        app.saved_config.toggle_skill(Agent::Claude, "planner");
+        app.saved_config.toggle_skill(Agent::Claude, "writer");
+        app.config.toggle_skill(Agent::Codex, "zebra");
+        app.config.toggle_skill(Agent::Codex, "alpha");
+
+        let first = app.pending_changes();
+        let (added, removed) = change_paths(&first, Agent::Claude);
+        assert_eq!(added, ["alpha", "middle", "zebra"]);
+        assert_eq!(removed, ["planner", "writer"]);
+
+        let (codex_added, codex_removed) = change_paths(&first, Agent::Codex);
+        assert_eq!(codex_added, ["alpha", "zebra"]);
+        assert!(codex_removed.is_empty());
+
+        for _ in 0..30 {
+            assert_eq!(
+                change_paths(&app.pending_changes(), Agent::Claude),
+                (added.clone(), removed.clone())
+            );
+            assert_eq!(
+                change_paths(&app.pending_changes(), Agent::Codex),
+                (codex_added.clone(), codex_removed.clone())
+            );
+        }
+    }
+
+    #[test]
+    fn click_skill_list_selects_then_toggles() {
+        let mut app = app_with_skills(&["alpha", "beta", "gamma"]);
+        app.hit_targets.skill_list = Some(HitRect {
+            x: 1,
+            y: 4,
+            width: 40,
+            height: 10,
+        });
+
+        app.click_skill_list(2, 5);
+        assert_eq!(app.selected_index, 1);
+        assert!(!app.config.is_skill_enabled(Agent::Claude, "beta"));
+
+        app.click_skill_list(2, 5);
+        assert!(app.config.is_skill_enabled(Agent::Claude, "beta"));
+        assert!(!app.config.is_skill_enabled(Agent::Claude, "alpha"));
+    }
+
+    #[test]
+    fn click_outside_skill_list_is_ignored() {
+        let mut app = app_with_skills(&["alpha", "beta"]);
+        app.hit_targets.skill_list = Some(HitRect {
+            x: 1,
+            y: 4,
+            width: 40,
+            height: 10,
+        });
+
+        app.click_skill_list(50, 5);
+        assert_eq!(app.selected_index, 0);
+        assert!(app.config.enabled_skills.get(Agent::Claude).is_empty());
+    }
+
+    #[test]
+    fn scroll_list_keeps_selection_in_viewport() {
+        let names: Vec<String> = (0..20).map(|i| format!("s{i:02}")).collect();
+        let name_refs: Vec<&str> = names.iter().map(String::as_str).collect();
+        let mut app = app_with_skills(&name_refs);
+        app.list_viewport_height = 5;
+        app.selected_index = 0;
+
+        app.scroll_list_by(3);
+        assert_eq!(app.list_scroll_offset, 3);
+        assert_eq!(app.selected_index, 3);
+
+        app.scroll_list_by(100);
+        assert_eq!(app.list_scroll_offset, 15);
+        assert_eq!(app.selected_index, 15);
+    }
+
+    #[test]
+    fn confirm_scroll_clamps_to_overflowing_changes() {
+        let names: Vec<String> = (0..20).map(|i| format!("s{i:02}")).collect();
+        let name_refs: Vec<&str> = names.iter().map(String::as_str).collect();
+        let mut app = app_with_skills(&name_refs);
+        for name in &name_refs {
+            app.config.toggle_skill(Agent::Claude, name);
+        }
+        app.current_screen = CurrentScreen::Confirmation;
+        app.confirm_viewport_height = 5;
+
+        let items = app.pending_change_items();
+        assert!(items.len() > 5);
+        assert!(matches!(items[0], PendingChangeLine::AgentHeader(_)));
+        assert_eq!(items[1], PendingChangeLine::Enable("s00".to_string()));
+
+        app.scroll_confirm_by(100);
+        assert_eq!(app.confirm_scroll_offset, items.len().saturating_sub(5));
+        app.scroll_confirm_by(-1);
+        assert_eq!(app.confirm_scroll_offset, items.len().saturating_sub(6));
+    }
+
+    #[test]
+    fn click_cancel_closes_confirmation() {
+        let mut app = app_with_skills(&["alpha"]);
+        app.current_screen = CurrentScreen::Confirmation;
+        app.hit_targets.cancel_button = Some(HitRect {
+            x: 12,
+            y: 20,
+            width: 10,
+            height: 1,
+        });
+
+        app.click_confirmation(14, 20);
+        assert_eq!(app.current_screen, CurrentScreen::Home);
+        assert_eq!(app.message.as_deref(), Some("Apply canceled"));
+    }
 }
