@@ -2,7 +2,7 @@
 name = "skill-switch-man"
 version = "0.3.4"
 edition = "2021"
-description = "TUI for managing agent skills for Claude Code, Codex, OpenCode, and Antigravity CLI"
+description = "TUI for managing agent skills for Claude Code, Codex, OpenCode, Antigravity CLI, and Grok"
 license = "MIT"
 readme = "README.md"
 repository = "https://github.com/shogoisaji/skill-switch-man"

@@ -12,7 +12,7 @@ use app::App;
 const HELP: &str = "\
 skillswitchman
 
-TUI for enabling shared agent skills for Claude Code, Codex, OpenCode, and Antigravity CLI.
+TUI for enabling shared agent skills for Claude Code, Codex, OpenCode, Antigravity CLI, and Grok.
 
 USAGE:
   skillswitchman [OPTIONS]
@@ -40,7 +40,8 @@ EXAMPLE settings.json:
       \"claude\": [\"browser-use\"],
       \"codex\": [\"browser-use\", \"imagegen\"],
       \"opencode\": [],
-      \"antigravity\": []
+      \"antigravity\": [],
+      \"grok\": []
     }
   }
 
