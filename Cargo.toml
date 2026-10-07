@@ -1,6 +1,6 @@
 [package]
 name = "skill-switch-man"
-version = "0.3.4"
+version = "0.3.5"
 edition = "2021"
 description = "TUI for managing agent skills for Claude Code, Codex, OpenCode, Antigravity CLI, and Grok"
 license = "MIT"
